@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: website-to-apk-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      - key: ANDROID_HOME
+        value: /opt/android-sdk
+    healthCheckPath: /api/status/ping
+    autoDeploy: true

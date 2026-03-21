@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Website to APK Converter</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0a0a0f;--surface:#13131a;--surface2:#1c1c27;--border:rgba(255,255,255,0.08);--border2:rgba(255,255,255,0.15);--accent:#7c6dfa;--accent2:#a78bfa;--green:#22d3a0;--amber:#f59e0b;--red:#f87171;--text:#f0efff;--muted:#8884a8;--mono:'DM Mono',monospace;--sans:'Syne',sans-serif}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(124,109,250,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(124,109,250,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+.glow-orb{position:fixed;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(124,109,250,0.12) 0%,transparent 70%);top:-200px;left:-200px;pointer-events:none;z-index:0;animation:orbFloat 8s ease-in-out infinite}
+.glow-orb2{position:fixed;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(34,211,160,0.08) 0%,transparent 70%);bottom:-100px;right:-100px;pointer-events:none;z-index:0;animation:orbFloat 10s ease-in-out infinite reverse}
+@keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(40px,30px)}}
+.wrapper{position:relative;z-index:1;max-width:780px;margin:0 auto;padding:60px 24px 80px}
+.badge{display:inline-flex;align-items:center;gap:6px;background:rgba(124,109,250,0.12);border:1px solid rgba(124,109,250,0.3);border-radius:20px;padding:4px 14px;font-size:12px;font-family:var(--mono);color:var(--accent2);letter-spacing:0.08em;margin-bottom:28px;animation:fadeUp 0.5s ease both}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+h1{font-size:clamp(2.4rem,6vw,3.8rem);font-weight:800;line-height:1.05;letter-spacing:-0.03em;margin-bottom:16px;animation:fadeUp 0.5s 0.1s ease both}
+h1 span{background:linear-gradient(135deg,var(--accent) 0%,var(--accent2) 50%,var(--green) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{font-size:1rem;color:var(--muted);line-height:1.7;max-width:520px;margin-bottom:48px;font-weight:400;animation:fadeUp 0.5s 0.2s ease both}
+@keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+.steps-row{display:flex;align-items:center;gap:0;margin-bottom:40px;animation:fadeUp 0.5s 0.3s ease both}
+.step-item{display:flex;align-items:center;gap:8px;flex:1}
+.step-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-family:var(--mono);font-weight:500;border:1.5px solid var(--border2);color:var(--muted);background:var(--surface);flex-shrink:0;transition:all 0.3s}
+.step-dot.active{border-color:var(--accent);color:var(--accent);background:rgba(124,109,250,0.1);box-shadow:0 0 16px rgba(124,109,250,0.3)}
+.step-dot.done{border-color:var(--green);background:rgba(34,211,160,0.1);color:var(--green)}
+.step-label{font-size:11px;color:var(--muted);font-family:var(--mono);white-space:nowrap}
+.step-label.active{color:var(--text)}
+.step-line{flex:1;height:1px;background:var(--border);margin:0 8px;max-width:60px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:36px;margin-bottom:24px;animation:fadeUp 0.5s 0.35s ease both;transition:border-color 0.3s}
+.card:hover{border-color:var(--border2)}
+.card-title{font-size:13px;font-family:var(--mono);color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:20px}
+.input-group{display:flex;gap:12px;margin-bottom:24px}
+.url-wrap{flex:1;position:relative}
+.url-wrap::before{content:'🌐';position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:16px;pointer-events:none;z-index:1}
+input[type="url"],input[type="text"]{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 14px 14px 44px;font-family:var(--mono);font-size:14px;color:var(--text);outline:none;transition:border-color 0.2s,box-shadow 0.2s}
+input[type="url"]:focus,input[type="text"]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(124,109,250,0.15)}
+input::placeholder{color:var(--muted)}
+.options-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.field label{display:block;font-size:11px;font-family:var(--mono);color:var(--muted);letter-spacing:0.08em;margin-bottom:8px}
+.field input[type="text"]{padding-left:14px}
+select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;font-family:var(--mono);font-size:14px;color:var(--text);outline:none;cursor:pointer;transition:border-color 0.2s;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238884a8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center}
+select:focus{border-color:var(--accent)}
+select option{background:#1c1c27}
+.upload-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.upload-box{border:1.5px dashed var(--border2);border-radius:14px;padding:20px 12px;text-align:center;cursor:pointer;transition:border-color 0.2s,background 0.2s;position:relative;overflow:hidden;min-height:120px;display:flex;align-items:center;justify-content:center}
+.upload-box:hover{border-color:var(--accent);background:rgba(124,109,250,0.05)}
+.upload-box.has-image{border-style:solid;border-color:var(--green)}
+.upload-preview{display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none}
+.upload-icon-big{font-size:28px}
+.upload-label{font-size:13px;font-weight:600;color:var(--text)}
+.upload-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.upload-img-preview{width:100%;height:100%;object-fit:cover;position:absolute;inset:0;border-radius:12px;opacity:0.85}
+.upload-img-label{position:absolute;bottom:6px;left:0;right:0;font-size:11px;font-family:var(--mono);color:var(--green);text-align:center}
+.btn-generate{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent) 0%,#9333ea 100%);border:none;border-radius:12px;font-family:var(--sans);font-size:15px;font-weight:700;color:#fff;cursor:pointer;letter-spacing:0.02em;transition:opacity 0.2s,transform 0.15s,box-shadow 0.2s;box-shadow:0 4px 24px rgba(124,109,250,0.35);position:relative;overflow:hidden}
+.btn-generate:hover{opacity:0.92;transform:translateY(-1px)}
+.btn-generate:disabled{opacity:0.5;cursor:not-allowed;transform:none}
+#progress-section{display:none;animation:fadeUp 0.4s ease both}
+.progress-log{background:#0d0d14;border:1px solid var(--border);border-radius:16px;padding:24px;font-family:var(--mono);font-size:13px;line-height:1.9;max-height:280px;overflow-y:auto;margin-bottom:20px}
+.log-line{display:flex;align-items:flex-start;gap:10px}
+.log-line.success .msg{color:var(--green)}
+.log-line.error .msg{color:var(--red)}
+.log-line.info .msg{color:var(--muted)}
+.log-line.step .msg{color:var(--accent2);font-weight:500}
+.prog-bar-wrap{background:var(--surface2);border-radius:99px;height:6px;overflow:hidden;margin-bottom:8px}
+.prog-bar-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--accent),var(--green));width:0%;transition:width 0.5s ease;box-shadow:0 0 12px rgba(124,109,250,0.5)}
+.prog-label{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right;margin-bottom:20px}
+#result-section{display:none;animation:fadeUp 0.4s ease both}
+.result-card{background:linear-gradient(135deg,rgba(34,211,160,0.06) 0%,rgba(124,109,250,0.06) 100%);border:1px solid rgba(34,211,160,0.2);border-radius:20px;padding:32px;text-align:center;margin-bottom:20px}
+.result-icon{font-size:48px;margin-bottom:16px;display:block;animation:bounceIn 0.6s cubic-bezier(0.34,1.56,0.64,1) both}
+@keyframes bounceIn{from{transform:scale(0.5);opacity:0}to{transform:scale(1);opacity:1}}
+.result-title{font-size:1.5rem;font-weight:800;margin-bottom:8px;color:var(--green)}
+.result-sub{font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:24px}
+.btn-download{display:inline-flex;align-items:center;gap:10px;background:var(--green);color:#000;border:none;border-radius:12px;padding:14px 28px;font-family:var(--sans);font-size:15px;font-weight:700;cursor:pointer;text-decoration:none;transition:opacity 0.2s,transform 0.15s;box-shadow:0 4px 20px rgba(34,211,160,0.3)}
+.btn-download:hover{opacity:0.9;transform:translateY(-1px)}
+.instructions-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px}
+.inst-title{font-size:12px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:16px}
+.inst-step{display:flex;gap:14px;margin-bottom:14px;align-items:flex-start}
+.inst-num{width:22px;height:22px;border-radius:50%;background:rgba(124,109,250,0.15);border:1px solid rgba(124,109,250,0.3);color:var(--accent2);font-size:11px;font-family:var(--mono);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.inst-text{font-size:13px;color:var(--muted);line-height:1.6}
+.inst-text code{background:var(--surface2);border-radius:4px;padding:1px 6px;font-family:var(--mono);color:var(--accent2);font-size:12px}
+.pills-row{display:flex;flex-wrap:wrap;gap:10px;margin-top:40px;animation:fadeUp 0.5s 0.5s ease both}
+.pill{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:99px;padding:6px 14px;font-size:12px;color:var(--muted);font-family:var(--mono)}
+.pill span{color:var(--text);font-weight:500}
+.btn-reset{background:transparent;border:1px solid var(--border2);border-radius:10px;padding:10px 20px;font-family:var(--mono);font-size:13px;color:var(--muted);cursor:pointer;transition:all 0.2s;margin-top:16px}
+.btn-reset:hover{border-color:var(--accent);color:var(--accent)}
+@media(max-width:560px){.options-grid,.upload-row{grid-template-columns:1fr}.wrapper{padding:40px 16px 60px}}
+</style>
+</head>
+<body>
+<div class="glow-orb"></div>
+<div class="glow-orb2"></div>
+<div class="wrapper">
+  <div class="badge">⚡ website → apk converter</div>
+  <h1>Turn any website<br>into an <span>Android App</span></h1>
+  <p class="subtitle">Enter a URL and get a fully offline Android APK — no coding required. Works with any public website.</p>
+  <div class="steps-row">
+    <div class="step-item"><div class="step-dot active" id="dot-1">1</div><span class="step-label active" id="lbl-1">Configure</span></div>
+    <div class="step-line"></div>
+    <div class="step-item"><div class="step-dot" id="dot-2">2</div><span class="step-label" id="lbl-2">Building</span></div>
+    <div class="step-line"></div>
+    <div class="step-item"><div class="step-dot" id="dot-3">3</div><span class="step-label" id="lbl-3">Download</span></div>
+  </div>
+  <div class="card" id="config-card">
+    <div class="card-title">// configure your app</div>
+    <div class="input-group">
+      <div class="url-wrap"><input type="url" id="url-input" placeholder="https://yourwebsite.com" autocomplete="off" spellcheck="false"/></div>
+    </div>
+    <div class="options-grid">
+      <div class="field"><label>APP NAME</label><input type="text" id="app-name" placeholder="My App"/></div>
+      <div class="field"><label>CRAWL DEPTH</label><select id="depth"><option value="0">0 — Start page only</option><option value="1" selected>1 — + Linked pages</option><option value="2">2 — Deep crawl</option></select></div>
+      <div class="field"><label>PACKAGE ID</label><input type="text" id="package-id" placeholder="com.mycompany.app"/></div>
+      <div class="field"><label>ORIENTATION</label><select id="orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option><option value="both" selected>Both</option></select></div>
+    </div>
+    <div class="upload-row">
+      <div class="upload-box" id="icon-box" onclick="document.getElementById('icon-input').click()">
+        <input type="file" id="icon-input" accept="image/*" style="display:none" onchange="previewImage(this,'icon-preview','icon-box')"/>
+        <div class="upload-preview" id="icon-preview">
+          <div class="upload-icon-big">📱</div>
+          <div class="upload-label">App Icon</div>
+          <div class="upload-sub">512x512 recommended</div>
+        </div>
+      </div>
+      <div class="upload-box" id="splash-box" onclick="document.getElementById('splash-input').click()">
+        <input type="file" id="splash-input" accept="image/*" style="display:none" onchange="previewImage(this,'splash-preview','splash-box')"/>
+        <div class="upload-preview" id="splash-preview">
+          <div class="upload-icon-big">🖼️</div>
+          <div class="upload-label">Splash Screen</div>
+          <div class="upload-sub">1080x1920 recommended</div>
+        </div>
+      </div>
+    </div>
+    <button class="btn-generate" id="generate-btn" onclick="startBuild()">⚡ Generate APK</button>
+  </div>
+  <div id="progress-section">
+    <div class="card" style="padding:28px">
+      <div class="card-title">// build progress</div>
+      <div class="prog-bar-wrap"><div class="prog-bar-fill" id="prog-bar"></div></div>
+      <div class="prog-label" id="prog-label">0%</div>
+      <div class="progress-log" id="log-output"></div>
+    </div>
+  </div>
+  <div id="result-section">
+    <div class="result-card">
+      <span class="result-icon">🎉</span>
+      <div class="result-title">APK Ready!</div>
+      <div class="result-sub" id="result-filename">app.apk — ready to install</div>
+      <a href="#" class="btn-download" id="download-btn">↓ Download APK</a>
+    </div>
+    <div class="instructions-card">
+      <div class="inst-title">// how to install</div>
+      <div class="inst-step"><div class="inst-num">1</div><div class="inst-text">On your Android phone go to <strong>Settings → Security</strong> and enable <code>Install unknown apps</code></div></div>
+      <div class="inst-step"><div class="inst-num">2</div><div class="inst-text">Transfer the APK to your phone via USB, email, or Google Drive</div></div>
+      <div class="inst-step"><div class="inst-num">3</div><div class="inst-text">Open the APK file on your phone and tap <code>Install</code></div></div>
+      <div class="inst-step"><div class="inst-num">4</div><div class="inst-text">Or connect via USB and run <code>adb install app.apk</code></div></div>
+    </div>
+    <div style="text-align:center"><button class="btn-reset" onclick="resetTool()">↩ Convert another website</button></div>
+  </div>
+  <div class="pills-row">
+    <div class="pill">📦 <span>Fully offline APK</span></div>
+    <div class="pill">🔒 <span>No data stored</span></div>
+    <div class="pill">⚡ <span>Free forever</span></div>
+    <div class="pill">📱 <span>Android 5.0+</span></div>
+  </div>
+</div>
+<script>
+const API_BASE = window.location.origin;
+let currentJobId = null;
+let pollInterval = null;
+let lastLogLen = 0;
+let pollCount = 0;
+const MAX_POLLS = 240; // 6 minutes max (240 × 1.5s)
+
+function previewImage(input, previewId, boxId) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById(boxId).classList.add('has-image');
+    document.getElementById(previewId).innerHTML =
+      '<img class="upload-img-preview" src="' + e.target.result + '"/>' +
+      '<span class="upload-img-label">✓ ' + file.name + '</span>';
+  };
+  reader.readAsDataURL(file);
+}
+
+function getBase64(inputId) {
+  return new Promise((resolve, reject) => {
+    const input = document.getElementById(inputId);
+    if (!input || !input.files[0]) return resolve(null);
+    const file = input.files[0];
+    if (file.size > 10 * 1024 * 1024) {
+      reject(new Error('Image ' + file.name + ' is too large (max 10MB)'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result.split(',')[1]);
+    reader.readAsDataURL(file);
+  });
+}
+
+function log(type, msg) {
+  const el = document.getElementById('log-output');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + type;
+  line.innerHTML = '<span class="msg">' + msg + '</span>';
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setProgress(pct) {
+  document.getElementById('prog-bar').style.width = pct + '%';
+  document.getElementById('prog-label').textContent = Math.round(pct) + '%';
+}
+
+function setStep(n) {
+  for (let i = 1; i <= 3; i++) {
+    const dot = document.getElementById('dot-' + i);
+    const lbl = document.getElementById('lbl-' + i);
+    dot.className = 'step-dot' + (i < n ? ' done' : i === n ? ' active' : '');
+    lbl.className = 'step-label' + (i === n ? ' active' : '');
+    dot.textContent = i < n ? '✓' : i;
+  }
+}
+
+function slugify(str) { return str.toLowerCase().replace(/[^a-z0-9]/g, '').substring(0, 12) || 'app'; }
+function getDomain(url) { try { return new URL(url).hostname.replace('www.', ''); } catch { return 'website'; } }
+
+async function startBuild() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url || !url.startsWith('http')) {
+    document.getElementById('url-input').style.borderColor = '#f87171';
+    setTimeout(() => document.getElementById('url-input').style.borderColor = '', 1500);
+    return;
+  }
+  const appName   = document.getElementById('app-name').value.trim() || getDomain(url);
+  const depth     = parseInt(document.getElementById('depth').value);
+  const pkgId     = document.getElementById('package-id').value.trim() || ('com.offline.' + slugify(getDomain(url)));
+  const orient    = document.getElementById('orientation').value;
+  let iconB64, splashB64;
+  try {
+    iconB64   = await getBase64('icon-input');
+    splashB64 = await getBase64('splash-input');
+  } catch(e) {
+    alert(e.message);
+    return;
+  }
+
+  document.getElementById('config-card').style.display = 'none';
+  document.getElementById('progress-section').style.display = 'block';
+  document.getElementById('generate-btn').disabled = true;
+  setStep(2);
+  lastLogLen = 0;
+  pollCount = 0;
+  document.getElementById('log-output').innerHTML = '';
+  setProgress(0);
+
+  try {
+    const res = await fetch(API_BASE + '/api/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, app_name: appName, depth, package: pkgId,
+                             orientation: orient, icon: iconB64, splash: splashB64 })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    currentJobId = data.job_id;
+    pollInterval = setInterval(() => pollStatus(appName, getDomain(url)), 1500);
+  } catch(e) {
+    log('error', '❌ Failed to start: ' + e.message);
+    document.getElementById('generate-btn').disabled = false;
+  }
+}
+
+async function pollStatus(appName, domain) {
+  if (!currentJobId) return;
+  pollCount++;
+  if (pollCount > MAX_POLLS) {
+    clearInterval(pollInterval);
+    log('error', '❌ Build timed out. The server may still be running — try refreshing.');
+    document.getElementById('generate-btn').disabled = false;
+    return;
+  }
+  try {
+    const res  = await fetch(API_BASE + '/api/status/' + currentJobId);
+    const data = await res.json();
+    setProgress(data.progress);
+    const newLines = data.log.slice(lastLogLen);
+    newLines.forEach(msg => {
+      const type = msg.startsWith('✅') || msg.startsWith('🎉') ? 'success'
+                 : msg.startsWith('❌') ? 'error'
+                 : msg.startsWith('🚀') || msg.startsWith('📁') || msg.startsWith('🔧') || msg.startsWith('🔨') ? 'step'
+                 : 'info';
+      log(type, msg);
+    });
+    lastLogLen = data.log.length;
+    if (data.status === 'done') {
+      clearInterval(pollInterval);
+      showResult(appName, domain);
+    } else if (data.status === 'error') {
+      clearInterval(pollInterval);
+      document.getElementById('generate-btn').disabled = false;
+    }
+  } catch(e) {
+    clearInterval(pollInterval);
+    log('error', '❌ Connection lost: ' + e.message);
+  }
+}
+
+function showResult(appName, domain) {
+  const jobId = currentJobId;
+  setStep(3);
+  document.getElementById('progress-section').style.display = 'none';
+  document.getElementById('result-section').style.display = 'block';
+  document.getElementById('generate-btn').disabled = false;
+  const filename = slugify(domain) + '_offline.apk';
+  document.getElementById('result-filename').textContent = filename + ' — ready to install';
+  const btn = document.getElementById('download-btn');
+  btn.href = API_BASE + '/api/download/' + jobId;
+  btn.innerHTML = '↓ Download ' + filename;
+  btn.setAttribute('download', filename);
+}
+
+function resetTool() {
+  currentJobId = null;
+  lastLogLen = 0;
+  pollCount = 0;
+  if (pollInterval) clearInterval(pollInterval);
+  document.getElementById('config-card').style.display = 'block';
+  document.getElementById('progress-section').style.display = 'none';
+  document.getElementById('result-section').style.display = 'none';
+  document.getElementById('log-output').innerHTML = '';
+  document.getElementById('url-input').value = '';
+  document.getElementById('app-name').value = '';
+  document.getElementById('package-id').value = '';
+  ['icon-box','splash-box'].forEach(id => document.getElementById(id).classList.remove('has-image'));
+  document.getElementById('icon-preview').innerHTML = '<div class="upload-icon-big">📱</div><div class="upload-label">App Icon</div><div class="upload-sub">512x512 recommended</div>';
+  document.getElementById('splash-preview').innerHTML = '<div class="upload-icon-big">🖼️</div><div class="upload-label">Splash Screen</div><div class="upload-sub">1080x1920 recommended</div>';
+  document.getElementById('icon-input').value = '';
+  document.getElementById('splash-input').value = '';
+  setProgress(0);
+  setStep(1);
+}
+
+document.getElementById('url-input').addEventListener('input', function() {
+  this.style.borderColor = '';
+  const domain = getDomain(this.value);
+  if (domain && domain !== 'website') {
+    if (!document.getElementById('app-name').value)
+      document.getElementById('app-name').placeholder = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
+    if (!document.getElementById('package-id').value)
+      document.getElementById('package-id').placeholder = 'com.offline.' + slugify(domain);
+  }
+});
+</script>
+</body>
+</html>

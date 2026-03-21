@@ -1,0 +1,7 @@
+builds/
+fix*.py
+write_html.py
+signed_app.apk
+signed_app.apk.idsig
+release.keystore
+*.md
