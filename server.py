@@ -435,6 +435,24 @@ def capture_email():
     except: pass
     return jsonify({"ok":True})
 
+@app.route("/api/contact", methods=["POST"])
+def contact():
+    data=request.json or {}
+    import json as _json, datetime
+    entry={
+        "ts": datetime.datetime.utcnow().isoformat(),
+        "name": data.get("name","").strip(),
+        "email": data.get("email","").strip(),
+        "country": data.get("country","").strip(),
+        "phone": data.get("phone","").strip(),
+        "reason": data.get("reason","").strip(),
+        "message": data.get("message","").strip()
+    }
+    try:
+        with open("contacts.jsonl","a") as f: f.write(_json.dumps(entry)+"\n")
+    except: pass
+    return jsonify({"ok":True})
+
 @app.route("/api/build", methods=["POST"])
 def start_build():
     data     = request.json or {}
