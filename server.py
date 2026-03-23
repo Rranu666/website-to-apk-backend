@@ -383,6 +383,58 @@ def run_job(job_id):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@app.route("/api/site-info")
+def site_info():
+    raw_url = request.args.get("url","").strip()
+    if not raw_url:
+        return jsonify({"error":"No URL"}), 400
+    if not raw_url.startswith(("http://","https://")):
+        raw_url = "https://" + raw_url
+
+    class _P(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.title=""; self.favicon=""; self.desc=""; self._t=False
+        def handle_starttag(self,tag,attrs):
+            a=dict(attrs)
+            if tag=="title": self._t=True
+            elif tag=="link" and ("icon" in a.get("rel","") or a.get("rel")=="shortcut icon"):
+                h=a.get("href","")
+                if h: self.favicon=urllib.parse.urljoin(raw_url,h)
+            elif tag=="meta" and a.get("name")=="description":
+                self.desc=a.get("content","")[:200]
+        def handle_data(self,d):
+            if self._t: self.title+=d; self._t=False
+        def handle_endtag(self,tag):
+            if tag=="title": self._t=False
+
+    try:
+        req=urllib.request.Request(raw_url,headers={"User-Agent":"Mozilla/5.0"})
+        html=urllib.request.urlopen(req,timeout=8).read().decode("utf-8",errors="replace")
+        p=_P(); p.feed(html)
+        parsed=urllib.parse.urlparse(raw_url)
+        domain=parsed.netloc.replace("www.","")
+        if not p.favicon: p.favicon=f"{parsed.scheme}://{parsed.netloc}/favicon.ico"
+        return jsonify({"url":raw_url,"title":(p.title.strip()[:60] or domain),
+                        "favicon":p.favicon,"description":(p.desc or f"Mobile app for {domain}"),
+                        "domain":domain})
+    except Exception:
+        parsed=urllib.parse.urlparse(raw_url)
+        domain=parsed.netloc.replace("www.","") or raw_url
+        return jsonify({"url":raw_url,"title":domain,
+                        "favicon":f"https://{parsed.netloc}/favicon.ico",
+                        "description":f"Mobile app for {domain}","domain":domain})
+
+@app.route("/api/capture-email", methods=["POST"])
+def capture_email():
+    data=request.json or {}
+    email=data.get("email","").strip()
+    if not email: return jsonify({"ok":False}), 400
+    try:
+        with open("leads.txt","a") as f: f.write(f"{email}\t{data.get('url','')}\n")
+    except: pass
+    return jsonify({"ok":True})
+
 @app.route("/api/build", methods=["POST"])
 def start_build():
     data     = request.json or {}
