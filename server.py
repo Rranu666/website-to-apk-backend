@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """server.py — Flask backend for Website to APK tool"""
 
-import os, re, uuid, base64, shutil, threading, subprocess
+import os, re, uuid, base64, shutil, threading, subprocess, ipaddress, html as _html_mod
 import urllib.request, urllib.parse, urllib.error
 import smtplib, ssl
 from email.mime.multipart import MIMEMultipart
@@ -12,7 +12,32 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+ALLOWED_ORIGINS = [
+    "https://website-to-apk-converter.netlify.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:5500",
+]
+CORS(app, origins=ALLOWED_ORIGINS)
+
+# ── Rate limiting (simple per-IP counter) ─────────────────────────────────────
+import time as _time
+_RATE = {}  # ip -> [timestamps]
+def _rate_limit(ip, limit=10, window=60):
+    now = _time.time()
+    times = [t for t in _RATE.get(ip,[]) if now-t < window]
+    if len(times) >= limit: return False
+    times.append(now); _RATE[ip] = times; return True
+
+def _esc(s): return _html_mod.escape(str(s or ''), quote=True)
+
+def _is_private_url(url):
+    """Block SSRF — refuse private/loopback IPs."""
+    try:
+        host = urllib.parse.urlparse(url).hostname or ''
+        addr = ipaddress.ip_address(host)
+        return addr.is_private or addr.is_loopback or addr.is_reserved
+    except ValueError:
+        return False  # hostname, not IP — allow
 
 JOBS = {}          # in-memory cache
 BUILD_DIR = Path("builds")
@@ -159,10 +184,13 @@ def sanitize_filename(url, base_url):
     base_net = urllib.parse.urlparse(base_url).netloc
     path = parsed.path.lstrip("/") or "index.html"
     if parsed.netloc and parsed.netloc != base_net:
-        path = os.path.join(parsed.netloc, path)
+        safe_netloc = re.sub(r'[^a-zA-Z0-9.\-]', '_', parsed.netloc)
+        path = safe_netloc + "/" + path
     if not os.path.splitext(path)[1]:
         path = path.rstrip("/") + "/index.html"
-    return path
+    # Prevent path traversal: remove any .. segments
+    parts = [p for p in path.replace('\\','/').split('/') if p and p != '..']
+    return '/'.join(parts) or 'index.html'
 
 def download_asset(url, dest):
     try:
@@ -636,11 +664,16 @@ def run_job(job_id):
 
 @app.route("/api/site-info")
 def site_info():
-    raw_url = request.args.get("url","").strip()
+    ip = request.remote_addr or 'unknown'
+    if not _rate_limit(ip, limit=30, window=60):
+        return jsonify({"error":"Too many requests"}), 429
+    raw_url = request.args.get("url","").strip()[:500]
     if not raw_url:
         return jsonify({"error":"No URL"}), 400
     if not raw_url.startswith(("http://","https://")):
         raw_url = "https://" + raw_url
+    if _is_private_url(raw_url):
+        return jsonify({"error":"Private URLs not allowed"}), 400
 
     class _P(HTMLParser):
         def __init__(self):
@@ -705,8 +738,9 @@ def contact():
     # Send confirmation to user + notify admin
     def _send_contact_emails():
         to = entry["email"]
-        name = entry["name"] or "there"
-        reason = entry["reason"] or "your enquiry"
+        name = _esc(entry["name"] or "there")
+        reason = _esc(entry["reason"] or "your enquiry")
+        message_safe = _esc(entry.get("message","") or "(no additional details)")
         if to and "@" in to:
             html_user = f"""<!DOCTYPE html>
 <html><body style="margin:0;padding:0;background:#07070f;font-family:'Inter',Arial,sans-serif;color:#e2e8f0">
@@ -725,7 +759,7 @@ def contact():
   <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(124,109,250,.08);border:1px solid rgba(124,109,250,.2);border-radius:12px">
   <tr><td style="padding:18px 22px;font-size:13px;color:#94a3b8;line-height:1.7">
     <strong style="color:#cbd5e1">Your message was logged:</strong><br>
-    {entry.get('message','') or '(no additional details)'}
+    {message_safe}
   </td></tr></table>
 </td></tr>
 <tr><td style="padding:18px 36px;border-top:1px solid rgba(255,255,255,.06);text-align:center">
@@ -764,16 +798,25 @@ def contact():
 
 @app.route("/api/build", methods=["POST"])
 def start_build():
+    ip = request.remote_addr or 'unknown'
+    if not _rate_limit(ip, limit=5, window=60):
+        return jsonify({"error":"Too many build requests. Please wait a minute."}), 429
     data     = request.json or {}
-    url      = data.get("url","").strip()
-    app_name = data.get("app_name","") or urllib.parse.urlparse(url).netloc.replace("www.","")
-    depth    = int(data.get("depth",1))
-    package  = data.get("package","") or f"com.offline.{slugify(app_name.split('.')[0])}"
+    url      = data.get("url","").strip()[:500]
+    if not url.startswith(("http://","https://")):
+        return jsonify({"error":"Invalid URL — must start with http:// or https://"}), 400
+    if _is_private_url(url):
+        return jsonify({"error":"Private/internal URLs are not allowed"}), 400
+    app_name = re.sub(r'[<>"\']','', data.get("app_name","") or urllib.parse.urlparse(url).netloc.replace("www.",""))[:50]
+    depth    = max(0, min(int(data.get("depth",1)), 2))  # clamp 0–2
+    raw_pkg  = data.get("package","").strip()
+    if raw_pkg and re.match(r'^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){1,}$', raw_pkg):
+        package = raw_pkg[:100]
+    else:
+        package = f"com.kcf.{slugify(app_name.split('.')[0]) or 'app'}"
     raw_orient = data.get("orientation","both")
     orient_map = {"portrait":"portrait","landscape":"landscape","both":"unspecified"}
     orientation = orient_map.get(raw_orient, "unspecified")
-    if not url.startswith("http"):
-        return jsonify({"error":"Invalid URL"}), 400
     job_id = str(uuid.uuid4())[:8]
     user_email = data.get("email","").strip()
     paid = bool(data.get("paid", False))
