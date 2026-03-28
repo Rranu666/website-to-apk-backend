@@ -3,6 +3,9 @@
 
 import os, re, uuid, base64, shutil, threading, subprocess
 import urllib.request, urllib.parse, urllib.error
+import smtplib, ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
 from html.parser import HTMLParser
 from flask import Flask, request, jsonify, send_file
@@ -44,6 +47,87 @@ def _load_job(job_id):
 def _get_job(job_id):
     """Return job from cache, falling back to disk."""
     return JOBS.get(job_id) or _load_job(job_id)
+
+# ── Email helper ──────────────────────────────────────────────────────────────
+
+SMTP_USER  = os.environ.get("SMTP_USER", "")   # Gmail address
+SMTP_PASS  = os.environ.get("SMTP_PASS", "")   # Gmail App Password
+SITE_URL   = os.environ.get("SITE_URL", "https://website-to-apk-converter.netlify.app")
+API_URL    = os.environ.get("API_URL",  "https://website-to-apk-backend.onrender.com")
+
+def send_apk_email(to_email: str, app_name: str, job_id: str):
+    """Send APK-ready notification with download link to the user."""
+    if not SMTP_USER or not SMTP_PASS:
+        return  # silently skip if not configured
+    download_url = f"{API_URL}/api/download/{job_id}"
+    subject = f"Your APK is ready — {app_name}"
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#07070f;font-family:'Inter',Arial,sans-serif;color:#e2e8f0">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#07070f;padding:40px 0">
+    <tr><td align="center">
+      <table width="580" cellpadding="0" cellspacing="0" style="background:#0f0f1a;border-radius:20px;border:1px solid rgba(255,255,255,.08);overflow:hidden">
+        <!-- Header -->
+        <tr><td style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:32px 40px;text-align:center;border-bottom:1px solid rgba(255,255,255,.06)">
+          <span style="font-size:22px;font-weight:900;letter-spacing:-.03em;color:#fff"><span style="color:#7c6dfa">APK</span>forge</span>
+        </td></tr>
+        <!-- Body -->
+        <tr><td style="padding:40px">
+          <h1 style="margin:0 0 8px;font-size:26px;font-weight:800;color:#fff">Your app is ready! 🎉</h1>
+          <p style="margin:0 0 28px;color:#94a3b8;font-size:15px;line-height:1.6">
+            <strong style="color:#e2e8f0">{app_name}</strong> has been compiled into an Android APK.<br>
+            Click the button below to download it instantly.
+          </p>
+          <!-- Download button -->
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 32px">
+            <tr><td style="background:linear-gradient(135deg,#7c6dfa,#9333ea);border-radius:12px;padding:1px">
+              <a href="{download_url}" style="display:inline-block;background:linear-gradient(135deg,#7c6dfa,#9333ea);color:#fff;text-decoration:none;font-size:16px;font-weight:700;padding:14px 32px;border-radius:12px;letter-spacing:-.01em">
+                ⬇ Download APK
+              </a>
+            </td></tr>
+          </table>
+          <!-- Info box -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(124,109,250,.08);border:1px solid rgba(124,109,250,.2);border-radius:12px;margin-bottom:28px">
+            <tr><td style="padding:20px 24px">
+              <p style="margin:0 0 6px;font-size:13px;color:#94a3b8;font-family:monospace;text-transform:uppercase;letter-spacing:.06em">How to install</p>
+              <ol style="margin:8px 0 0;padding-left:20px;color:#cbd5e1;font-size:14px;line-height:1.8">
+                <li>Download the APK to your Android device</li>
+                <li>Open <strong>Settings → Security</strong> and enable <em>Install unknown apps</em></li>
+                <li>Tap the downloaded file to install</li>
+              </ol>
+            </td></tr>
+          </table>
+          <p style="margin:0;font-size:13px;color:#64748b;line-height:1.6">
+            Link expires after 7 days. Need to rebuild? Visit <a href="{SITE_URL}" style="color:#7c6dfa;text-decoration:none">APKforge</a> anytime — it's free.
+          </p>
+        </td></tr>
+        <!-- Footer -->
+        <tr><td style="padding:20px 40px;border-top:1px solid rgba(255,255,255,.06);text-align:center">
+          <p style="margin:0;font-size:12px;color:#475569">
+            © 2026 Kindness Community Foundation · Developed by KCF LLC, California USA<br>
+            You received this because you built an app at <a href="{SITE_URL}" style="color:#7c6dfa;text-decoration:none">APKforge</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"]    = f"APKforge <{SMTP_USER}>"
+    msg["To"]      = to_email
+    msg.attach(MIMEText(html, "html"))
+
+    try:
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as s:
+            s.login(SMTP_USER, SMTP_PASS)
+            s.sendmail(SMTP_USER, to_email, msg.as_string())
+    except Exception as e:
+        print(f"[email] Failed to send to {to_email}: {e}")
 
 # ── HTML scraper ──────────────────────────────────────────────────────────────
 
@@ -402,6 +486,15 @@ def run_job(job_id):
             job["status"]   = "done"
             job["progress"] = 100
             _emit(job_id, "🎉 APK built successfully!", 100)
+            # Send download link email if user provided one
+            user_email = job.get("email","")
+            if user_email and "@" in user_email:
+                _emit(job_id, f"📧 Sending download link to {user_email}…")
+                threading.Thread(
+                    target=send_apk_email,
+                    args=(user_email, app_name, job_id),
+                    daemon=True
+                ).start()
         else:
             job["status"] = "error"
             if not any("❌" in l for l in job["log"]):
@@ -482,6 +575,64 @@ def contact():
     try:
         with open("contacts.jsonl","a") as f: f.write(_json.dumps(entry)+"\n")
     except: pass
+    # Send confirmation to user + notify admin
+    def _send_contact_emails():
+        to = entry["email"]
+        name = entry["name"] or "there"
+        reason = entry["reason"] or "your enquiry"
+        if to and "@" in to:
+            html_user = f"""<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#07070f;font-family:'Inter',Arial,sans-serif;color:#e2e8f0">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#07070f;padding:40px 0">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#0f0f1a;border-radius:20px;border:1px solid rgba(255,255,255,.08)">
+<tr><td style="background:linear-gradient(135deg,#1a1a2e,#16213e);padding:28px 36px;border-bottom:1px solid rgba(255,255,255,.06);text-align:center">
+  <span style="font-size:20px;font-weight:900;color:#fff"><span style="color:#7c6dfa">APK</span>forge</span>
+</td></tr>
+<tr><td style="padding:36px">
+  <h2 style="margin:0 0 12px;font-size:22px;color:#fff">Thanks for reaching out, {name}! 👋</h2>
+  <p style="margin:0 0 20px;color:#94a3b8;font-size:15px;line-height:1.7">
+    We've received your message about <strong style="color:#e2e8f0">{reason}</strong>.<br>
+    Our team will get back to you within <strong style="color:#7c6dfa">24 hours</strong>.
+  </p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(124,109,250,.08);border:1px solid rgba(124,109,250,.2);border-radius:12px">
+  <tr><td style="padding:18px 22px;font-size:13px;color:#94a3b8;line-height:1.7">
+    <strong style="color:#cbd5e1">Your message was logged:</strong><br>
+    {entry.get('message','') or '(no additional details)'}
+  </td></tr></table>
+</td></tr>
+<tr><td style="padding:18px 36px;border-top:1px solid rgba(255,255,255,.06);text-align:center">
+  <p style="margin:0;font-size:12px;color:#475569">© 2026 Kindness Community Foundation · KCF LLC, California USA</p>
+</td></tr>
+</table></td></tr></table></body></html>"""
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"We got your message — APKforge Support"
+            msg["From"]    = f"APKforge Support <{SMTP_USER}>"
+            msg["To"]      = to
+            msg.attach(MIMEText(html_user, "html"))
+            try:
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as s:
+                    s.login(SMTP_USER, SMTP_PASS)
+                    s.sendmail(SMTP_USER, to, msg.as_string())
+            except Exception as e:
+                print(f"[email] contact confirm failed: {e}")
+        # Admin notification
+        if SMTP_USER and SMTP_PASS:
+            admin_body = "\n".join(f"{k}: {v}" for k,v in entry.items())
+            msg2 = MIMEText(admin_body, "plain")
+            msg2["Subject"] = f"[APKforge Contact] {reason} — {entry['name']} <{entry['email']}>"
+            msg2["From"]    = f"APKforge <{SMTP_USER}>"
+            msg2["To"]      = SMTP_USER
+            try:
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as s:
+                    s.login(SMTP_USER, SMTP_PASS)
+                    s.sendmail(SMTP_USER, SMTP_USER, msg2.as_string())
+            except Exception as e:
+                print(f"[email] admin notify failed: {e}")
+    if SMTP_USER and SMTP_PASS:
+        threading.Thread(target=_send_contact_emails, daemon=True).start()
     return jsonify({"ok":True})
 
 @app.route("/api/build", methods=["POST"])
@@ -497,9 +648,10 @@ def start_build():
     if not url.startswith("http"):
         return jsonify({"error":"Invalid URL"}), 400
     job_id = str(uuid.uuid4())[:8]
+    user_email = data.get("email","").strip()
     JOBS[job_id] = {"status":"running","progress":0,"log":[],"apk_path":None,
                     "url":url,"app_name":app_name,"package":package,"depth":depth,
-                    "orientation":orientation,
+                    "orientation":orientation,"email":user_email,
                     "icon":data.get("icon"),"splash":data.get("splash")}
     _save_job(job_id)   # persist immediately so any worker can find it
     threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
