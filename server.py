@@ -436,6 +436,86 @@ def save_image(b64_data, dest_path):
     with open(dest_path,"wb") as f:
         f.write(base64.b64decode(b64_data))
 
+def generate_kcf_splash() -> bytes | None:
+    """Create a KCF-branded 1080×1920 splash screen PNG."""
+    try:
+        import io
+        from PIL import Image, ImageDraw, ImageFont
+
+        W, H = 1080, 1920
+        BG       = (7,   7,  15)   # #07070f
+        ACCENT   = (124, 109, 250) # #7c6dfa
+        BLUE     = (56,  189, 248) # #38bdf8
+        MUTED    = (148, 163, 184) # #94a3b8
+        SUBTLER  = (71,  85,  105) # #475569
+
+        img  = Image.new("RGB", (W, H), BG)
+        draw = ImageDraw.Draw(img)
+
+        # Soft radial glow behind logo — draw layered ellipses
+        for r in range(340, 0, -20):
+            alpha = int(18 * (1 - r / 340))
+            overlay = Image.new("RGB", (W, H), BG)
+            od = ImageDraw.Draw(overlay)
+            od.ellipse([(W//2 - r, H//2 - r - 60), (W//2 + r, H//2 + r - 60)],
+                       fill=(80, 60, 200))
+            img = Image.blend(img, overlay, alpha / 255)
+            draw = ImageDraw.Draw(img)
+
+        # Try system fonts (Ubuntu 22.04 in Docker)
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        ]
+        font_reg_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        ]
+        def load_font(paths, size):
+            for p in paths:
+                try: return ImageFont.truetype(p, size)
+                except: pass
+            return ImageFont.load_default()
+
+        f_logo = load_font(font_paths,     200)
+        f_sub  = load_font(font_reg_paths,  68)
+        f_tag  = load_font(font_reg_paths,  42)
+
+        # ── KCF letters in accent colour ──────────────────────────────────
+        logo_txt = "KCF"
+        bb = draw.textbbox((0, 0), logo_txt, font=f_logo)
+        lw, lh = bb[2] - bb[0], bb[3] - bb[1]
+        lx = (W - lw) // 2 - bb[0]
+        ly = H // 2 - lh - 50 - bb[1]
+        draw.text((lx, ly), logo_txt, fill=ACCENT, font=f_logo)
+
+        # Thin accent underline
+        draw.rectangle([(W//2 - 120, ly + lh + 18), (W//2 + 120, ly + lh + 22)],
+                       fill=BLUE)
+
+        # ── "App Builder" subtitle ────────────────────────────────────────
+        sub = "App Builder"
+        sb = draw.textbbox((0, 0), sub, font=f_sub)
+        sw = sb[2] - sb[0]
+        draw.text(((W - sw) // 2 - sb[0], H // 2 + 36 - sb[1]),
+                  sub, fill=MUTED, font=f_sub)
+
+        # ── Bottom tag ────────────────────────────────────────────────────
+        tag = "Made with KCF App Builder"
+        tb = draw.textbbox((0, 0), tag, font=f_tag)
+        tw = tb[2] - tb[0]
+        draw.text(((W - tw) // 2 - tb[0], H - 180 - tb[1]),
+                  tag, fill=SUBTLER, font=f_tag)
+
+        buf = io.BytesIO()
+        img.save(buf, "PNG", optimize=True)
+        return buf.getvalue()
+    except Exception as e:
+        print(f"[splash] KCF splash generation failed: {e}")
+        return None
+
 def _emit(job_id, msg, pct=None):
     job = JOBS[job_id]
     job["log"].append(msg)
@@ -476,9 +556,56 @@ def run_job(job_id):
             with open(os.path.join(project_dir,"res/drawable","ic_launcher.png"),"wb") as f:
                 f.write(placeholder)
 
-        if splash_b64:
-            _emit(job_id, "🖼️  Adding splash screen…")
-            save_image(splash_b64, os.path.join(project_dir,"res/drawable","splash.png"))
+        paid = job.get("paid", False)
+        splash_dest = os.path.join(project_dir, "res/drawable", "splash.png")
+
+        if splash_b64 and paid:
+            # Paid user with custom splash — use as-is, no branding
+            _emit(job_id, "🖼️  Adding custom splash screen…")
+            save_image(splash_b64, splash_dest)
+        elif splash_b64 and not paid:
+            # Free user uploaded a splash — overlay KCF watermark on it
+            _emit(job_id, "🖼️  Adding splash with KCF branding…")
+            try:
+                import io as _io
+                from PIL import Image, ImageDraw, ImageFont
+                raw = base64.b64decode(splash_b64)
+                base_img = Image.open(_io.BytesIO(raw)).convert("RGBA")
+                base_img = base_img.resize((1080, 1920), Image.LANCZOS)
+                # Dark footer bar
+                overlay = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                od = ImageDraw.Draw(overlay)
+                od.rectangle([(0, 1780), (1080, 1920)], fill=(7, 7, 15, 210))
+                base_img = Image.alpha_composite(base_img, overlay)
+                draw = ImageDraw.Draw(base_img)
+                font_paths = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                ]
+                font = ImageFont.load_default()
+                for p in font_paths:
+                    try: font = ImageFont.truetype(p, 44); break
+                    except: pass
+                tag = "Made with KCF App Builder"
+                tb = draw.textbbox((0, 0), tag, font=font)
+                tw = tb[2] - tb[0]
+                draw.text(((1080 - tw) // 2 - tb[0], 1840 - tb[1]),
+                          tag, fill=(124, 109, 250), font=font)
+                final = base_img.convert("RGB")
+                buf = _io.BytesIO()
+                final.save(buf, "PNG")
+                with open(splash_dest, "wb") as f: f.write(buf.getvalue())
+            except Exception as e:
+                _emit(job_id, f"⚠️  Splash overlay failed ({e}), using KCF default…")
+                splash_data = generate_kcf_splash()
+                if splash_data:
+                    with open(splash_dest, "wb") as f: f.write(splash_data)
+        else:
+            # Free user, no custom splash — generate full KCF branded splash
+            _emit(job_id, "🏷️  Adding KCF branded splash screen…")
+            splash_data = generate_kcf_splash()
+            if splash_data:
+                with open(splash_dest, "wb") as f: f.write(splash_data)
 
         apk = build_apk(project_dir, job_id)
         if apk:
@@ -649,9 +776,10 @@ def start_build():
         return jsonify({"error":"Invalid URL"}), 400
     job_id = str(uuid.uuid4())[:8]
     user_email = data.get("email","").strip()
+    paid = bool(data.get("paid", False))
     JOBS[job_id] = {"status":"running","progress":0,"log":[],"apk_path":None,
                     "url":url,"app_name":app_name,"package":package,"depth":depth,
-                    "orientation":orientation,"email":user_email,
+                    "orientation":orientation,"email":user_email,"paid":paid,
                     "icon":data.get("icon"),"splash":data.get("splash")}
     _save_job(job_id)   # persist immediately so any worker can find it
     threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
