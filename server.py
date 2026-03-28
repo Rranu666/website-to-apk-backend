@@ -14,6 +14,8 @@ from flask_cors import CORS
 app = Flask(__name__)
 ALLOWED_ORIGINS = [
     "https://website-to-apk-converter.netlify.app",
+    "https://freeappmaker.ai",
+    "https://www.freeappmaker.ai",
     "http://localhost:3000",
     "http://127.0.0.1:5500",
 ]
