@@ -11,9 +11,39 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-JOBS = {}
+JOBS = {}          # in-memory cache
 BUILD_DIR = Path("builds")
 BUILD_DIR.mkdir(exist_ok=True)
+
+import json as _json_mod
+
+def _job_state_path(job_id):
+    return BUILD_DIR / job_id / "state.json"
+
+def _save_job(job_id):
+    """Persist job state to disk (minus large binary fields)."""
+    job = JOBS.get(job_id)
+    if not job: return
+    state = {k: v for k, v in job.items() if k not in ("icon","splash")}
+    p = _job_state_path(job_id)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(p, "w") as f: _json_mod.dump(state, f)
+    except: pass
+
+def _load_job(job_id):
+    """Load job state from disk into JOBS cache."""
+    p = _job_state_path(job_id)
+    if not p.exists(): return None
+    try:
+        with open(p) as f: state = _json_mod.load(f)
+        JOBS[job_id] = state
+        return state
+    except: return None
+
+def _get_job(job_id):
+    """Return job from cache, falling back to disk."""
+    return JOBS.get(job_id) or _load_job(job_id)
 
 # ── HTML scraper ──────────────────────────────────────────────────────────────
 
@@ -62,8 +92,7 @@ def download_asset(url, dest):
 def crawl_site(start_url, assets_dir, depth, job_id):
     visited, all_assets = set(), set()
     def emit(msg, pct=None):
-        JOBS[job_id]["log"].append(msg)
-        if pct: JOBS[job_id]["progress"] = pct
+        _emit(job_id, msg, pct)
     def crawl(url, d):
         if url in visited or d < 0: return
         visited.add(url)
@@ -264,8 +293,7 @@ def write(base, rel, content):
 
 def build_apk(project_dir, job_id):
     def emit(msg, pct=None):
-        JOBS[job_id]["log"].append(msg)
-        if pct: JOBS[job_id]["progress"] = pct
+        _emit(job_id, msg, pct)
 
     ah, bt, btv = detect_build_tools()
     if not bt: emit("❌ Android build-tools not found."); return None
@@ -324,6 +352,12 @@ def save_image(b64_data, dest_path):
     with open(dest_path,"wb") as f:
         f.write(base64.b64decode(b64_data))
 
+def _emit(job_id, msg, pct=None):
+    job = JOBS[job_id]
+    job["log"].append(msg)
+    if pct is not None: job["progress"] = pct
+    _save_job(job_id)
+
 def run_job(job_id):
     job = JOBS[job_id]
     url, app_name, package, depth = job["url"], job["app_name"], job["package"], job["depth"]
@@ -332,12 +366,10 @@ def run_job(job_id):
     project_dir = str(BUILD_DIR / job_id)
     assets_dir  = os.path.join(project_dir, "_assets")
     try:
-        job["log"].append(f"🚀 Starting build for: {url}")
-        job["progress"] = 5
+        _emit(job_id, f"🚀 Starting build for: {url}", 5)
         crawl_site(url, assets_dir, depth, job_id)
 
-        job["log"].append("📁 Generating Android project…")
-        job["progress"] = 67
+        _emit(job_id, "📁 Generating Android project…", 67)
         pkg_path = package.replace(".","/")
 
         for d in [f"src/{pkg_path}","res/values","res/drawable","gen","obj","bin","assets"]:
@@ -351,20 +383,17 @@ def run_job(job_id):
         write(project_dir, "res/values/strings.xml",
               f'<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">{app_name}</string></resources>')
 
-        # Save icon to all DPI buckets
         if icon_b64:
-            job["log"].append("🎨 Adding app icon…")
+            _emit(job_id, "🎨 Adding app icon…")
             save_image(icon_b64, os.path.join(project_dir,"res/drawable","ic_launcher.png"))
         else:
-            # Write a minimal 1x1 transparent PNG as placeholder icon
             placeholder = base64.b64decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
             with open(os.path.join(project_dir,"res/drawable","ic_launcher.png"),"wb") as f:
                 f.write(placeholder)
 
-        # Save splash screen
         if splash_b64:
-            job["log"].append("🖼️  Adding splash screen…")
+            _emit(job_id, "🖼️  Adding splash screen…")
             save_image(splash_b64, os.path.join(project_dir,"res/drawable","splash.png"))
 
         apk = build_apk(project_dir, job_id)
@@ -372,14 +401,16 @@ def run_job(job_id):
             job["apk_path"] = apk
             job["status"]   = "done"
             job["progress"] = 100
-            job["log"].append("🎉 APK built successfully!")
+            _emit(job_id, "🎉 APK built successfully!", 100)
         else:
             job["status"] = "error"
             if not any("❌" in l for l in job["log"]):
-                job["log"].append("❌ Build failed: APK not produced. Check Android SDK setup.")
+                _emit(job_id, "❌ Build failed: APK not produced. Check Android SDK setup.")
+            _save_job(job_id)
     except Exception as e:
         job["status"] = "error"
-        job["log"].append(f"❌ Error: {e}")
+        _emit(job_id, f"❌ Error: {e}")
+        _save_job(job_id)
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
@@ -470,22 +501,31 @@ def start_build():
                     "url":url,"app_name":app_name,"package":package,"depth":depth,
                     "orientation":orientation,
                     "icon":data.get("icon"),"splash":data.get("splash")}
+    _save_job(job_id)   # persist immediately so any worker can find it
     threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
     return jsonify({"job_id":job_id})
 
 @app.route("/api/status/<job_id>")
 def job_status(job_id):
-    job = JOBS.get(job_id)
+    job = _get_job(job_id)
     if not job: return jsonify({"error":"Not found"}), 404
     return jsonify({"status":job["status"],"progress":job["progress"],"log":job["log"]})
 
 @app.route("/api/download/<job_id>")
 def download_apk(job_id):
-    job = JOBS.get(job_id)
-    if not job or job["status"] != "done" or not job["apk_path"]:
-        return jsonify({"error":"APK not ready"}), 404
+    job = _get_job(job_id)
+    if not job:
+        return jsonify({"error":"Job not found — the server may have restarted. Please rebuild."}), 404
+    if job["status"] != "done":
+        return jsonify({"error":f"Build status: {job['status']}. APK not ready yet."}), 404
+    apk_path = job.get("apk_path")
+    # Also check the standard path on disk in case apk_path is relative
+    if not apk_path or not os.path.exists(apk_path):
+        apk_path = str(BUILD_DIR / job_id / "bin" / "app.apk")
+    if not os.path.exists(apk_path):
+        return jsonify({"error":"APK file missing — please rebuild."}), 404
     slug = slugify(urllib.parse.urlparse(job["url"]).netloc.replace("www.",""))
-    return send_file(job["apk_path"], as_attachment=True,
+    return send_file(apk_path, as_attachment=True,
                      download_name=f"{slug}_offline.apk",
                      mimetype="application/vnd.android.package-archive")
 
